@@ -56,7 +56,7 @@ class checkpoint():
             self.dir = os.path.join('..', 'experiment', args.load)
             if os.path.exists(self.dir):
                 self.log = torch.load(self.get_path('psnr_log.pt'))
-                print('Continue from epoch {}...'.format(len(self.log)))
+                #print('Continue from epoch {}...'.format(len(self.log)))
             else:
                 args.load = ''
 
@@ -95,7 +95,7 @@ class checkpoint():
         self.log = torch.cat([self.log, log])
 
     def write_log(self, log, refresh=False):
-        print(log)
+        #print(log)
         self.log_file.write(log + '\n')
         if refresh:
             self.log_file.close()
@@ -104,6 +104,7 @@ class checkpoint():
     def done(self):
         self.log_file.close()
 
+    
     def plot_psnr(self, epoch):
         axis = np.linspace(1, epoch, epoch)
         for idx_data, d in enumerate(self.args.data_test):

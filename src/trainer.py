@@ -1,12 +1,36 @@
 import os
 import math
+import mmap
 from decimal import Decimal
+import time
 
 import utility
+import imageio
 
 import torch
 import torch.nn.utils as utils
 from tqdm import tqdm
+
+
+def get_list_num_with_write(datalist, newlist, result_file):
+    with open(result_file, 'a') as f:
+        for i in datalist:
+            if isinstance(i, list):
+                get_list_num_with_write(i, newlist, result_file)
+            else:
+                newlist.append(i)
+                f.write(str(i))
+                f.write('\n')
+    f.close()
+
+
+def get_list_num(datalist, newlist):
+    for i in datalist:
+        if isinstance(i, list):
+            get_list_num(i, newlist)
+        else:
+            newlist.append(i)
+
 
 class Trainer():
     def __init__(self, args, loader, my_model, my_loss, ckp):
@@ -81,43 +105,94 @@ class Trainer():
         )
         self.model.eval()
 
+        mmap_file = mmap.mmap(-1, 67108864, access=mmap.ACCESS_WRITE, tagname='sharemem')
+        sr_mmap_file = mmap.mmap(-1, 1000, access=mmap.ACCESS_WRITE, tagname='sr')
+        loop_count = '-1'
+
+        result_file_name = 'results.txt'
+
         timer_test = utility.timer()
-        if self.args.save_results: self.ckp.begin_background()
+        data_dic_lr = {}
+        data_dic_hr = {}
+        # if self.args.save_results: self.ckp.begin_background()
         for idx_data, d in enumerate(self.loader_test):
             for idx_scale, scale in enumerate(self.scale):
                 d.dataset.set_scale(idx_scale)
-                for lr, hr, filename in tqdm(d, ncols=80):
-                    lr, hr = self.prepare(lr, hr)
-                    sr = self.model(lr, idx_scale)
-                    sr = utility.quantize(sr, self.args.rgb_range)
+                for lr_ori, hr_ori, filename_ori in d:
+                    data_dic_lr[filename_ori[0]] = lr_ori
+                    data_dic_hr[filename_ori[0]] = hr_ori
+                print("Preprocess Completed!")
+                # for lr, hr, filename in tqdm(d, ncols=200):
 
-                    save_list = [sr]
-                    self.ckp.log[-1, idx_data, idx_scale] += utility.calc_psnr(
-                        sr, hr, scale, self.args.rgb_range, dataset=d
-                    )
-                    if self.args.save_gt:
-                        save_list.extend([lr, hr])
+                partition_mmap_file = mmap.mmap(-1, 100, access=mmap.ACCESS_WRITE, tagname='partition')
+                while_loop = 1
+                while while_loop == 1:
+                    partition_mmap_file.seek(0)
+                    mmap_partition_num = str(int(partition_mmap_file.read_byte()) - 1)
+                    if mmap_partition_num != loop_count:
+                        loop_count = mmap_partition_num
+                        print("Partition " + mmap_partition_num)
+                        filename = 'P6_7500x3750-' + mmap_partition_num
 
-                    if self.args.save_results:
-                        self.ckp.save_results(d, filename[0], save_list, scale)
+                        lr = data_dic_lr[filename]
+                        hr = data_dic_hr[filename]
+                        lr, hr = self.prepare(lr, hr)
+                        sr = self.model(lr, idx_scale)
+                        sr = utility.quantize(sr, self.args.rgb_range)
 
-                self.ckp.log[-1, idx_data, idx_scale] /= len(d)
-                best = self.ckp.log.max(0)
-                self.ckp.write_log(
-                    '[{} x{}]\tPSNR: {:.3f} (Best: {:.3f} @epoch {})'.format(
-                        d.dataset.name,
-                        scale,
-                        self.ckp.log[-1, idx_data, idx_scale],
-                        best[0][idx_data, idx_scale],
-                        best[1][idx_data, idx_scale] + 1
-                    )
-                )
+                        save_list = [sr]
+                        self.ckp.log[-1, idx_data, idx_scale] += utility.calc_psnr(
+                            sr, hr, scale, self.args.rgb_range, dataset=d
+                        )
+                        if self.args.save_gt:
+                            save_list.extend([lr, hr])
 
+                        if self.args.save_results:
+                            self.ckp.save_results(d, filename[0], save_list, scale)
+
+                        # mmaploop = len(zip(save_list, postfix))
+
+                        postfix = ('SR', 'LR', 'HR')
+                        for v, p in zip(save_list, postfix):
+                            normalized = v[0].mul(255 / self.args.rgb_range)
+                            tensor_cpu = normalized.byte().permute(1, 2, 0).cpu()
+                            # print(tensor_cpu.numpy().tolist());
+                            # imageio.imwrite(('C:\\Users\\Jiapeng Chi\\Documents\\RenderTextureTest\\Assets\\Resources\\EDSR_images\\{}_x{}_{}.png'.format(d.dataset.name,filename[0],scale, p)), tensor_cpu.numpy())
+                            # mmp_bytes = bytes(str(tensor_cpu.numpy().tolist()).encode())
+                            # shared_mem_size = len(mmp_bytes)
+                            # mmp_name = 'global_share_memory'
+                            # shmem = mmap.mmap(-1, shared_mem_size, access = mmap.ACCESS_WRITE, tagname = 'global_share_memory')
+                            data_list = tensor_cpu.numpy().tolist()
+                            new_list = []
+                            get_list_num(data_list, new_list)
+                            # print(len(new_list))
+                            mmap_file.write(bytes(new_list))
+
+                            sr_list = []
+                            sr_list.append(int(mmap_partition_num) + 1)
+                            sr_mmap_file.write(bytes(sr_list))
+
+                        self.ckp.log[-1, idx_data, idx_scale] /= len(d)
+                        best = self.ckp.log.max(0)
+                        self.ckp.write_log(
+                            '[{} x{}]\tPSNR: {:.3f} (Best: {:.3f} @epoch {})'.format(
+                                d.dataset.name,
+                                scale,
+                                self.ckp.log[-1, idx_data, idx_scale],
+                                best[0][idx_data, idx_scale],
+                                best[1][idx_data, idx_scale] + 1
+                            )
+                        )
+
+
+
+        time.sleep(60)
+        mmap_file.close()
         self.ckp.write_log('Forward: {:.2f}s\n'.format(timer_test.toc()))
         self.ckp.write_log('Saving...')
 
-        if self.args.save_results:
-            self.ckp.end_background()
+        # if self.args.save_results:
+        #    self.ckp.end_background()
 
         if not self.args.test_only:
             self.ckp.save(self, epoch, is_best=(best[1][0, 0] + 1 == epoch))
@@ -130,6 +205,7 @@ class Trainer():
 
     def prepare(self, *args):
         device = torch.device('cpu' if self.args.cpu else 'cuda')
+
         def _prepare(tensor):
             if self.args.precision == 'half': tensor = tensor.half()
             return tensor.to(device)
@@ -143,4 +219,3 @@ class Trainer():
         else:
             epoch = self.optimizer.get_last_epoch() + 1
             return epoch >= self.args.epochs
-
