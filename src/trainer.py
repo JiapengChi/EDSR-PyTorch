@@ -132,7 +132,7 @@ class Trainer():
                     if mmap_partition_num != loop_count:
                         loop_count = mmap_partition_num
                         print("Partition " + mmap_partition_num)
-                        filename = 'P6_7500x3750-' + mmap_partition_num
+                        filename = 'Tile-' + mmap_partition_num
 
                         lr = data_dic_lr[filename]
                         hr = data_dic_hr[filename]
@@ -150,22 +150,17 @@ class Trainer():
                         if self.args.save_results:
                             self.ckp.save_results(d, filename[0], save_list, scale)
 
-                        # mmaploop = len(zip(save_list, postfix))
+
 
                         postfix = ('SR', 'LR', 'HR')
                         for v, p in zip(save_list, postfix):
                             normalized = v[0].mul(255 / self.args.rgb_range)
                             tensor_cpu = normalized.byte().permute(1, 2, 0).cpu()
-                            # print(tensor_cpu.numpy().tolist());
-                            # imageio.imwrite(('C:\\Users\\Jiapeng Chi\\Documents\\RenderTextureTest\\Assets\\Resources\\EDSR_images\\{}_x{}_{}.png'.format(d.dataset.name,filename[0],scale, p)), tensor_cpu.numpy())
-                            # mmp_bytes = bytes(str(tensor_cpu.numpy().tolist()).encode())
-                            # shared_mem_size = len(mmp_bytes)
-                            # mmp_name = 'global_share_memory'
-                            # shmem = mmap.mmap(-1, shared_mem_size, access = mmap.ACCESS_WRITE, tagname = 'global_share_memory')
+
                             data_list = tensor_cpu.numpy().tolist()
                             new_list = []
                             get_list_num(data_list, new_list)
-                            # print(len(new_list))
+
                             mmap_file.write(bytes(new_list))
 
                             sr_list = []
