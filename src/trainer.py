@@ -106,7 +106,7 @@ class Trainer():
         self.model.eval()
 
         mmap_file = mmap.mmap(-1, 67108864, access=mmap.ACCESS_WRITE, tagname='sharemem')
-        sr_mmap_file = mmap.mmap(-1, 1000, access=mmap.ACCESS_WRITE, tagname='sr')
+        sr_mmap_file = mmap.mmap(-1, 40960, access=mmap.ACCESS_WRITE, tagname='sr')
         loop_count = '-1'
 
         result_file_name = 'results.txt'
@@ -124,14 +124,26 @@ class Trainer():
                 print("Preprocess Completed!")
                 # for lr, hr, filename in tqdm(d, ncols=200):
 
-                partition_mmap_file = mmap.mmap(-1, 100, access=mmap.ACCESS_WRITE, tagname='partition')
+                partition_mmap_file = mmap.mmap(-1, 40960, access=mmap.ACCESS_WRITE, tagname='partition')
                 while_loop = 1
                 while while_loop == 1:
                     partition_mmap_file.seek(0)
-                    mmap_partition_num = str(int(partition_mmap_file.read_byte()) - 1)
-                    if mmap_partition_num != loop_count:
+                    mmap_partition_num_0 = int(partition_mmap_file.read_byte())
+                    # if mmap_partition_num_0 != 0:
+                    #     print(mmap_partition_num_0)
+                    mmap_partition_num_1 = int(partition_mmap_file.read_byte())
+                    # if mmap_partition_num_1 != 0:
+                    #     print(mmap_partition_num_1)
+                    mmap_partition_num_2 = int(partition_mmap_file.read_byte())
+                    # if mmap_partition_num_2 != 0:
+                    #     print(mmap_partition_num_2)
+                    mmap_partition_num_3 = int(partition_mmap_file.read_byte())
+                    # if mmap_partition_num_3 != 0:
+                    #     print(mmap_partition_num_3)
+                    mmap_partition_num = str(1000 * mmap_partition_num_0 + 100 * mmap_partition_num_1 + 10 * mmap_partition_num_2 + 1 * mmap_partition_num_3 - 1)
+                    if mmap_partition_num != loop_count and mmap_partition_num != '-1':
                         loop_count = mmap_partition_num
-                        print("Partition " + mmap_partition_num)
+
                         filename = 'Tile-' + mmap_partition_num
 
                         lr = data_dic_lr[filename]
@@ -163,9 +175,14 @@ class Trainer():
 
                             mmap_file.write(bytes(new_list))
 
-                            sr_list = []
-                            sr_list.append(int(mmap_partition_num) + 1)
+                            # sr_list = []
+                            # sr_list.append(int(mmap_partition_num) + 1)
+                            # sr_mmap_file.write(bytes(sr_list))
+
+                            sr_list = list(map(int, list(str(int(mmap_partition_num) + 1).zfill(4))))
                             sr_mmap_file.write(bytes(sr_list))
+
+                            print("Partition " + mmap_partition_num)
 
                         self.ckp.log[-1, idx_data, idx_scale] /= len(d)
                         best = self.ckp.log.max(0)
